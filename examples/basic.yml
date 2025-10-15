@@ -13,7 +13,10 @@ testsuite:
         mpi: False
     nuopc_basic:
         executable: nuopc_basic
-        inputdata: {type: template, infile: templates/nuopc.cfg}
+        inputdata:
+            type: template
+            infile: templates/nuopc.cfg
+            vars: { extrap: creep, extraplvls: 9 }
         arguments: nuopc.cfg
         timeout: 60
         mpinp: 4
