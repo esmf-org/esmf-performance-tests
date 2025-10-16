@@ -174,7 +174,7 @@ module BASIC_DRIVER
       return
 
     ! ingest FreeFormat driver attributes
-    call NUOPC_CompAttributeIngest(driver, attrFF, rc=rc)
+    call NUOPC_CompAttributeIngest(driver, attrFF, addFlag=.true., rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
       file=__FILE__)) &
@@ -220,7 +220,7 @@ module BASIC_DRIVER
       file=__FILE__)) &
       return
     ! ingest FreeFormat comp1 attributes
-    call NUOPC_CompAttributeIngest(child, attrFF, rc=rc)
+    call NUOPC_CompAttributeIngest(child, attrFF, addFlag=.true., rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
       file=__FILE__)) &
@@ -265,7 +265,7 @@ module BASIC_DRIVER
       file=__FILE__)) &
       return
     ! ingest FreeFormat comp2 attributes
-    call NUOPC_CompAttributeIngest(child, attrFF, rc=rc)
+    call NUOPC_CompAttributeIngest(child, attrFF, addFlag=.true., rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
       file=__FILE__)) &

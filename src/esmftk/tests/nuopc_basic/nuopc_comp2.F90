@@ -31,6 +31,8 @@ module NUOPC_COMP2
                                                     295.5_ESMF_KIND_R8, &
                                                       9.5_ESMF_KIND_R8, &
                                                      25.5_ESMF_KIND_R8 /)
+  character(len=ESMF_MAXSTR) :: geomValue = "default"
+  character(len=ESMF_MAXSTR) :: geomFileValue = "none"
 
   !-----------------------------------------------------------------------------
   contains
@@ -135,11 +137,15 @@ module NUOPC_COMP2
     integer, intent(out) :: rc
 
     ! local variables
-    type(ESMF_State)              :: importState, exportState
+    character(ESMF_MAXSTR)         :: name
+    integer                        :: localPet
+    type(ESMF_State)               :: importState, exportState
+    logical                        :: attrPresent
     type(ESMF_TimeInterval)        :: stabilityTimeStep
     type(ESMF_Field)               :: field
-    type(ESMF_Grid)                :: gridIn
-    type(ESMF_Grid)                :: gridOut
+    type(ESMF_Grid)                :: defaultGrid
+    type(ESMF_Mesh)                :: modelMesh
+    type(ESMF_Geom)                :: modelGeom
     integer                        :: tlb(2), tub(2)
     real(ESMF_KIND_R8), pointer    :: lon_fptr(:)
     real(ESMF_KIND_R8), pointer    :: lat_fptr(:)
@@ -147,6 +153,13 @@ module NUOPC_COMP2
     integer                        :: i,j
 
     rc = ESMF_SUCCESS
+
+    ! query the Component for its name
+    call ESMF_GridCompGet(model, name=name, localPet=localPet, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, &
+      file=__FILE__)) &
+      return
 
     ! query for importState and exportState
     call NUOPC_ModelGet(model, importState=importState, &
@@ -156,61 +169,132 @@ module NUOPC_COMP2
       file=__FILE__)) &
       return
 
-    ! create a Grid object for Fields
-    gridIn = ESMF_GridCreateNoPeriDimUfrm(maxIndex=(/15, 16/), &
-      minCornerCoord=(/260._ESMF_KIND_R8,  0._ESMF_KIND_R8/), &
-      maxCornerCoord=(/355._ESMF_KIND_R8, 45._ESMF_KIND_R8/), &
-      coordSys=ESMF_COORDSYS_SPH_DEG, staggerLocList=(/ESMF_STAGGERLOC_CENTER/), &
-      rc=rc)
+    call NUOPC_CompAttributeGet(model, name="Geom", &
+      isPresent=attrPresent, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
       file=__FILE__)) &
       return
+    if (attrPresent) then
+      call NUOPC_CompAttributeGet(model, name="Geom", &
+        value=geomValue, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, &
+        file=__FILE__)) &
+        return
+    else
+      geomValue = "default"
+    endif
 
-    ! get grid coordinates
-    call ESMF_GridGetCoord(gridIn, coordDim=1, &
-      staggerLoc=ESMF_STAGGERLOC_CENTER, farrayPtr=lon_fptr, rc=rc)
+    call NUOPC_CompAttributeGet(model, name="GeomFile", &
+      isPresent=attrPresent, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
       file=__FILE__)) &
       return
-    call ESMF_GridGetCoord(gridIn, coordDim=2, &
-      staggerLoc=ESMF_STAGGERLOC_CENTER, farrayPtr=lat_fptr, rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
-      line=__LINE__, &
-      file=__FILE__)) &
-      return
+    if (attrPresent) then
+      call NUOPC_CompAttributeGet(model, name="GeomFile", &
+        value=geomFileValue, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, &
+        file=__FILE__)) &
+        return
+    else
+      geomFileValue = "none"
+    endif
 
-    ! add mask and island
-    call ESMF_GridAddItem(gridIn, itemflag=ESMF_GRIDITEM_MASK, &
-      staggerLoc=ESMF_STAGGERLOC_CENTER, rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
-      line=__LINE__, &
-      file=__FILE__)) &
-      return
-    call ESMF_GridGetItem(gridIn, itemflag=ESMF_GRIDITEM_MASK, &
-      staggerLoc=ESMF_STAGGERLOC_CENTER, &
-      totalLBound=tlb, totalUBound=tub, farrayPtr=msk_fptr, rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
-      line=__LINE__, &
-      file=__FILE__)) &
-      return
-    msk_fptr = 0
-    do j=tlb(2), tub(2)
-    do i=tlb(1), tub(1)
-      if ((lon_fptr(i).ge.islandLoc(1)) .AND. &
-          (lon_fptr(i).le.islandLoc(2)) .AND. &
-          (lat_fptr(j).ge.islandLoc(3)) .AND. &
-          (lat_fptr(j).le.islandLoc(4)) ) then
-        msk_fptr(i,j) = 1
-      endif
-    enddo
-    enddo
+    if (localPet.eq.0) then
+      write (*,"(A,A,A)") trim(name),": ", &
+        "Geom = "//trim(geomValue)
+      write (*,"(A,A,A)") trim(name),": ", &
+        "GeomFile = "//trim(geomFileValue)
+    endif
 
-    gridOut = gridIn ! for now out same as in
+    select case (geomValue)
+      case ('default')
+
+        ! create a Grid object for Fields
+        defaultGrid = ESMF_GridCreateNoPeriDimUfrm(maxIndex=(/15, 16/), &
+          minCornerCoord=(/260._ESMF_KIND_R8,  0._ESMF_KIND_R8/), &
+          maxCornerCoord=(/355._ESMF_KIND_R8, 45._ESMF_KIND_R8/), &
+          coordSys=ESMF_COORDSYS_SPH_DEG, &
+          staggerLocList=(/ESMF_STAGGERLOC_CENTER/), &
+          rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return
+        ! get grid coordinates
+        call ESMF_GridGetCoord(defaultGrid, coordDim=1, &
+          staggerLoc=ESMF_STAGGERLOC_CENTER, farrayPtr=lon_fptr, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return
+        call ESMF_GridGetCoord(defaultGrid, coordDim=2, &
+          staggerLoc=ESMF_STAGGERLOC_CENTER, farrayPtr=lat_fptr, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return
+        ! add mask and island
+        call ESMF_GridAddItem(defaultGrid, itemflag=ESMF_GRIDITEM_MASK, &
+          staggerLoc=ESMF_STAGGERLOC_CENTER, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return
+        call ESMF_GridGetItem(defaultGrid, itemflag=ESMF_GRIDITEM_MASK, &
+          staggerLoc=ESMF_STAGGERLOC_CENTER, &
+          totalLBound=tlb, totalUBound=tub, farrayPtr=msk_fptr, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return
+        msk_fptr = 0
+        do j=tlb(2), tub(2)
+        do i=tlb(1), tub(1)
+          if ((lon_fptr(i).ge.islandLoc(1)) .AND. &
+              (lon_fptr(i).le.islandLoc(2)) .AND. &
+              (lat_fptr(j).ge.islandLoc(3)) .AND. &
+              (lat_fptr(j).le.islandLoc(4)) ) then
+            msk_fptr(i,j) = 1
+          endif
+        enddo
+        enddo
+        modelGeom = ESMF_GeomCreate(defaultGrid, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return
+
+      case ('ESMF_FILEFORMAT_ESMFMESH')
+
+        modelMesh = ESMF_MeshCreate(geomFileValue, &
+          fileformat=ESMF_FILEFORMAT_ESMFMESH, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return  ! bail out
+        modelGeom = ESMF_GeomCreate(modelMesh, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return
+
+      case default
+
+        call ESMF_LogSetError(ESMF_RC_NOT_VALID, &
+          msg="Invalid Geom value: "//trim(geomValue), &
+          line=__LINE__, &
+          file=__FILE__, &
+          rcToReturn=rc)
+        return
+
+    endselect
 
     ! importable field: air_pressure_at_sea_level
-    field = ESMF_FieldCreate(name="pmsl", grid=gridIn, &
+    field = ESMF_FieldCreate(name="pmsl", geom=modelGeom, &
       typekind=ESMF_TYPEKIND_R8, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
@@ -230,7 +314,7 @@ module NUOPC_COMP2
       return
 
     ! importable field: surface_net_downward_shortwave_flux
-    field = ESMF_FieldCreate(name="rsns", grid=gridIn, &
+    field = ESMF_FieldCreate(name="rsns", geom=modelGeom, &
       typekind=ESMF_TYPEKIND_R8, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
@@ -250,7 +334,7 @@ module NUOPC_COMP2
       return
 
     ! exportable field: sea_surface_temperature
-    field = ESMF_FieldCreate(name="sst", grid=gridOut, &
+    field = ESMF_FieldCreate(name="sst", geom=modelGeom, &
       typekind=ESMF_TYPEKIND_R8, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
@@ -389,7 +473,9 @@ module NUOPC_COMP2
     character(len=80), allocatable          :: itemNameList(:)
     type(ESMF_StateItem_Flag), allocatable  :: itemTypeList(:)
     type(ESMF_Field)                        :: field
-    real(ESMF_KIND_R8), pointer             :: farrayPtr(:,:)
+    integer                                 :: rank
+    real(ESMF_KIND_R8), pointer             :: farrayPtr1d(:)
+    real(ESMF_KIND_R8), pointer             :: farrayPtr2d(:,:)
     integer                                 :: lclZero(1)
     integer                                 :: gblZero(1)
     integer                                 :: lclMissing(1)
@@ -472,13 +558,28 @@ module NUOPC_COMP2
           line=__LINE__, &
           file=__FILE__)) &
           return
-        call ESMF_FieldGet(field, farrayPtr=farrayPtr, rc=rc)
+        call ESMF_FieldGet(field, rank=rank, rc=rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
           line=__LINE__, &
           file=__FILE__)) &
           return
-        lclZero(1) = COUNT(farrayPtr(:,:).eq.zeroValue)
-        lclMissing(1) = COUNT(farrayPtr(:,:).eq.missingValue)
+        if (rank .eq. 1) then
+          call ESMF_FieldGet(field, farrayPtr=farrayPtr1d, rc=rc)
+          if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+            line=__LINE__, &
+            file=__FILE__)) &
+            return
+          lclZero(1) = COUNT(farrayPtr1d(:).eq.zeroValue)
+          lclMissing(1) = COUNT(farrayPtr1d(:).eq.missingValue)
+        else
+          call ESMF_FieldGet(field, farrayPtr=farrayPtr2d, rc=rc)
+          if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+            line=__LINE__, &
+            file=__FILE__)) &
+            return
+          lclZero(1) = COUNT(farrayPtr2d(:,:).eq.zeroValue)
+          lclMissing(1) = COUNT(farrayPtr2d(:,:).eq.missingValue)
+        endif
         call ESMF_VMReduce(vm, lclZero, gblZero, &
           reduceflag=ESMF_REDUCE_SUM, count=1, rootPet=0, rc=rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &

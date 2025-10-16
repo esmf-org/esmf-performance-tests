@@ -1,0 +1,25 @@
+# NUOPC Mesh Test
+
+name: "nuopc_mesh"
+# esmf: <path_to_esmf>
+profile: on
+results: {format: markdown}
+
+testsuite:
+    nuopc_mesh2mesh:
+        executable: nuopc_basic
+        inputdata:
+            - input/fv1.9x2.5_unstructured.nc
+            - input/gx3v7_unstructured.nc
+            - type: template
+              infile: templates/nuopc.cfg
+              vars: {
+                  extrap: creep, extraplvls: 6,
+                  comp1.geom: ESMF_FILEFORMAT_ESMFMESH,
+                  comp1.geomfile: gx3v7_unstructured.nc,
+                  comp2.geom: ESMF_FILEFORMAT_ESMFMESH,
+                  comp2.geomfile: fv1.9x2.5_unstructured.nc
+              }
+        arguments: nuopc.cfg
+        timeout: 60
+        mpinp: 4
