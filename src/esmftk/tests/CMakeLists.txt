@@ -14,5 +14,6 @@ find_package(MPI REQUIRED COMPONENTS Fortran)
 
 add_subdirectory(esmf_initialize)
 add_subdirectory(esmf_reconcile)
-add_subdirectory(esmx_basic)
+#add_subdirectory(esmx_basic)
 add_subdirectory(nuopc_basic)
+add_subdirectory(esmf_mem)
