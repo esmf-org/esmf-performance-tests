@@ -16,7 +16,8 @@ testsuite:
               infile: templates/esmf_mem.cfg
               vars: {
                   testtype: regrid,
-                  extrap: creep, extraplvls: 6,
+                  disttype: overlapPartial,
+                  extrap: nearest_stod,
                   comp1.geom: ESMF_FILEFORMAT_ESMFMESH,
                   comp1.geomfile: gx3v7_unstructured.nc,
                   comp2.geom: ESMF_FILEFORMAT_ESMFMESH,

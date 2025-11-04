@@ -126,7 +126,7 @@ module MEM_DRIVER
     integer, intent(out) :: rc
 
     ! local variables
-    integer                       :: localPet
+    integer                       :: localPet,petCount
     character(len=8)              :: zeroValues
     character(len=8)              :: missingValues
     type(ESMF_GridComp)           :: child
@@ -138,11 +138,13 @@ module MEM_DRIVER
     type(ESMF_Config)             :: config
     type(NUOPC_FreeFormat)        :: attrFF
     character(len=ESMF_MAXSTR)    :: testType
+    character(len=ESMF_MAXSTR)    :: distType
+    integer, allocatable          :: petListComp1(:), petListComp2(:) 
     
     rc = ESMF_SUCCESS
 
     ! query the Component for its localPet
-    call ESMF_GridCompGet(driver, localPet=localPet, rc=rc)
+    call ESMF_GridCompGet(driver, localPet=localPet, petCount=petCount,  rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
       file=__FILE__)) &
@@ -179,7 +181,17 @@ module MEM_DRIVER
       line=__LINE__, &
       file=__FILE__)) &
       return
+    call ESMF_ConfigGetAttribute(config, distType, &
+      label="distType:", default="overlapTotal", rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, &
+      file=__FILE__)) &
+      return
 
+
+    write(*,*) "Driver distType=",distType
+
+    
     ! ingest FreeFormat driver attributes
     call NUOPC_CompAttributeIngest(driver, attrFF, addFlag=.true., rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
@@ -194,8 +206,19 @@ module MEM_DRIVER
       file=__FILE__)) &
       return
 
+    ! Create component pet lists based on distType
+    call createCompPetLists(distType, petCount, petListComp1, petListComp2, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, &
+      file=__FILE__)) &
+      return
+
+    write(*,*) "petListComp1=",petListComp1
+    write(*,*) "petListComp2=",petListComp2
+    
     ! SetServices for NUOPC_COMP1
-    call NUOPC_DriverAddComp(driver, "COMP1", comp1, comp=child, rc=rc)
+    call NUOPC_DriverAddComp(driver, "COMP1", comp1, comp=child, &
+         petList=petListComp1, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
       file=__FILE__)) &
@@ -248,7 +271,8 @@ module MEM_DRIVER
       return
 
     ! SetServices for NUOPC_COMP2
-    call NUOPC_DriverAddComp(driver, "COMP2", comp2, comp=child, rc=rc)
+    call NUOPC_DriverAddComp(driver, "COMP2", comp2, comp=child, &
+         petList=petListComp2, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, &
       file=__FILE__)) &
@@ -401,4 +425,84 @@ module MEM_DRIVER
 
   !-----------------------------------------------------------------------------
 
+  subroutine createCompPetLists(distType, petCount, petListComp1, petListComp2, rc)
+    character(len=*)  :: distType
+    integer :: petCount
+    integer, allocatable :: petListComp1(:), petListComp2(:)
+    integer, intent(out) :: rc
+
+    integer :: i,sizeComp1,sizeComp2,offset
+    
+    ! create petLists based on distribution type
+    if (distType == "overlapTotal") then
+
+       ! Allocate petLists
+       allocate(petListComp1(petCount))
+       allocate(petListComp2(petCount))
+
+       ! Fill petLists
+       do i=1,petCount
+          petListComp1(i)=i-1
+          petListComp2(i)=i-1
+       enddo
+
+    else if (distType == "disjointHalf") then    
+
+       ! Calculate sizes
+       sizeComp1=petCount/2
+       sizeComp2=petCount-sizeComp1
+
+       
+       ! Allocate petLists
+       allocate(petListComp1(sizeComp1))
+       allocate(petListComp2(sizeComp2))
+
+       ! Fill petList1
+       do i=1,sizeComp1
+          petListComp1(i)=i-1
+       enddo
+
+       ! Fill petList2
+       do i=1,sizeComp2
+          petListComp2(i)=sizeComp1+i-1
+       enddo
+
+    else if (distType == "overlapPartial") then ! This overlaps rougly a third and comps are of equal size
+   
+       
+       ! Calculate sizes
+       offset=petCount/3
+       sizeComp1=petCount-offset
+       sizeComp2=sizeComp1
+
+       
+       ! Allocate petLists
+       allocate(petListComp1(sizeComp1))
+       allocate(petListComp2(sizeComp2))
+
+       ! Fill petList1
+       do i=1,sizeComp1
+          petListComp1(i)=i-1
+       enddo
+
+       ! Fill petList2
+       do i=1,sizeComp2
+          petListComp2(i)=offset+i-1
+       enddo       
+
+    else ! Error if not recognized
+
+       call ESMF_LogSetError(ESMF_RC_NOT_VALID, &
+            msg="Unrecognized distType: "//trim(distType), &
+            line=__LINE__, &
+            file=__FILE__, &
+            rcToReturn=rc)
+       return       
+    endif
+    
+    ! Return success
+    rc=ESMF_SUCCESS
+        
+  end subroutine
+    
 end module

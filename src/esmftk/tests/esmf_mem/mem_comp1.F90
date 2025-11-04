@@ -128,7 +128,7 @@ module NUOPC_COMP1
         (testType /= "geom") .and. &
         (testType /= "regrid")) then
           call ESMF_LogSetError(ESMF_RC_NOT_VALID, &
-               msg="Invalid testType: "//trim(testType), &
+               msg="Unrecognized testType: "//trim(testType), &
                line=__LINE__, &
                file=__FILE__, &
                rcToReturn=rc)
